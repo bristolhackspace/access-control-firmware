@@ -1,0 +1,5 @@
+# This file was generated using idf.py save-defconfig. It can be edited manually.
+# Espressif IoT Development Framework (ESP-IDF) Project Minimal Configuration
+#
+CONFIG_PERIPH_CTRL_FUNC_IN_IRAM=y
+CONFIG_FREERTOS_UNICORE=y

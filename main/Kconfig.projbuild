@@ -1,0 +1,28 @@
+menu "Access controller configuration"
+
+    config WIFI_SSID
+        string "WiFi SSID"
+        default "myssid"
+        help
+            SSID (network name) to connect to
+
+    config WIFI_PASSWORD
+        string "WiFi Password"
+        default "mypassword"
+        help
+            WiFi password to use.
+
+    config MIN_RECONNECT_INTERVAL
+        int "Minimum reconnect interval in seconds"
+        default 5
+        help
+            Minimum reconnect interval
+
+    config MAX_RECONNECT_INTERVAL
+        int "Maximum reconnect interval"
+        default 60
+        help
+            Maximum reconnect interval
+
+
+endmenu
