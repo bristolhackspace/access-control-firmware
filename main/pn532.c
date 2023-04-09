@@ -3,6 +3,7 @@
 #include "driver/gpio.h"
 #include "sdkconfig.h"
 #include "esp_log.h"
+#include <string.h>
 
 #include "pn532.h"
 
@@ -11,13 +12,12 @@ static const char* TAG = "pn532";
 #define BUF_SIZE (1024)
 
 static const uart_port_t uart_num = UART_NUM_2;
-static const int tx_pin = 17;
-static const int rx_pin = 16;
+static const int tx_pin = 25;
+static const int rx_pin = 26;
 static const TickType_t default_timeout = 500/portTICK_PERIOD_MS;
 
 static uint8_t frame_buffer[300];
 
-void pn532_wakeup(void);
 int pn532_write_frame(uint8_t* data, size_t data_len);
 int pn532_send_command(uint8_t command, uint8_t* data, size_t data_len, TickType_t ack_timeout);
 int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType_t rsp_timeout);
@@ -31,10 +31,12 @@ esp_err_t pn532_init(void)
         .parity = UART_PARITY_DISABLE,
         .stop_bits = UART_STOP_BITS_1,
         .flow_ctrl = UART_HW_FLOWCTRL_DISABLE,
+        .source_clk = UART_SCLK_DEFAULT,
     };
     ESP_ERROR_CHECK(uart_driver_install(uart_num, BUF_SIZE * 2, 0, 0, NULL, 0));
     ESP_ERROR_CHECK(uart_param_config(uart_num, &uart_config));
     ESP_ERROR_CHECK(uart_set_pin(uart_num, tx_pin, rx_pin, UART_PIN_NO_CHANGE, UART_PIN_NO_CHANGE));
+    return ESP_OK;
 }
 
 void pn532_wakeup(void)
@@ -77,6 +79,7 @@ int pn532_send_command(uint8_t command, uint8_t* data, size_t data_len, TickType
     if (rc < 0) {
         return rc;
     }
+    return ESP_OK;
 }
 
 int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType_t rsp_timeout)
@@ -86,10 +89,10 @@ int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType
     while (1)
     {
         rc = uart_read_bytes(uart_num, &header, sizeof(header), rsp_timeout);
-        if (rc < 0) {
-            ESP_LOGE(TAG, "Timeout waiting for response");
+        if (rc <= 0) {
             return rc;
         }
+
         if (header == PN532_PREAMBLE) {
             continue;
         }else if (header == PN532_STARTCODE2) {
@@ -103,11 +106,11 @@ int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType
 
     uint8_t frame_len[2] = {0};
     rc = uart_read_bytes(uart_num, frame_len, sizeof(frame_len), rsp_timeout);
-    if (rc < 0) {
-        ESP_LOGE(TAG, "Timeout waiting for response");
-        return rc;
+    if (rc <= 0) {
+        ESP_LOGE(TAG, "Incomplete response");
+        return ESP_FAIL;
     }
-    if ((frame_len[0] + frame_len[1]) & 0xff != 0) {
+    if (((frame_len[0] + frame_len[1]) & 0xff) != 0) {
         ESP_LOGE(TAG, "Length checksum error");
         pn532_flush_until_empty();
         return ESP_FAIL;
@@ -127,27 +130,27 @@ int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType
 
     uint8_t tfi = 0;
     rc = uart_read_bytes(uart_num, &tfi, 1, rsp_timeout);
-    if (rc < 0) {
-        ESP_LOGE(TAG, "Timeout waiting for response");
-        return rc;
+    if (rc != 1) {
+        ESP_LOGE(TAG, "Incomplete response");
+        return ESP_FAIL;
     }
     uint8_t checksum = tfi;
     frame_len[0] -= 1;
 
     uint8_t got_command = 0;
     rc = uart_read_bytes(uart_num, &got_command, 1, rsp_timeout);
-    if (rc < 0) {
-        ESP_LOGE(TAG, "Timeout waiting for response");
-        return rc;
+    if (rc != 1) {
+        ESP_LOGE(TAG, "Incomplete response");
+        return ESP_FAIL;
     }
     checksum += got_command;
     frame_len[0] -= 1;
 
     if (frame_len[0]) {
         rc = uart_read_bytes(uart_num, data, frame_len[0], rsp_timeout);
-        if (rc < 0) {
-            ESP_LOGE(TAG, "Timeout waiting for response");
-            return rc;
+        if (rc != frame_len[0]) {
+            ESP_LOGE(TAG, "Incomplete response");
+            return ESP_FAIL;
         }
         for (size_t i=0; i<frame_len[0]; i++)
         {
@@ -158,9 +161,9 @@ int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType
 
     uint8_t footer[2] = {0};
     rc = uart_read_bytes(uart_num, footer, sizeof(footer), rsp_timeout);
-    if (rc < 0) {
-        ESP_LOGE(TAG, "Timeout waiting for response");
-        return rc;
+    if (rc != sizeof(footer)) {
+        ESP_LOGE(TAG, "Incomplete response");
+        return ESP_FAIL;
     }
     checksum += footer[0];
     if (checksum) {
@@ -199,7 +202,7 @@ esp_err_t pn532_firmware_version(uint8_t* ic, uint8_t* ver, uint8_t* rev, uint8_
     }
     uint8_t buf[4] = {0};
     rc = pn532_get_response(PN532_COMMAND_GETFIRMWAREVERSION, buf, 4, default_timeout);
-    if (rc) {
+    if (rc < 0) {
         return rc;
     }
     *ic = buf[0];
@@ -221,8 +224,48 @@ esp_err_t pn532_sam_config(void)
         return rc;
     }
     rc = pn532_get_response(PN532_COMMAND_SAMCONFIGURATION, NULL, 0, default_timeout);
-    if (rc) {
+    if (rc < 0) {
         return rc;
     }
     return ESP_OK;
+}
+
+esp_err_t pn532_listen_for_passive_target(void)
+{
+    uint8_t inlist_params[] = {0x01, PN532_MIFARE_ISO14443A};
+    return pn532_send_command(PN532_COMMAND_INLISTPASSIVETARGET, inlist_params, sizeof(inlist_params), default_timeout);
+}
+
+int pn532_get_passive_target(uint8_t* data, size_t data_len, TickType_t timeout)
+{
+    uint8_t rsp_buffer[30] = {0};
+    int rc = pn532_get_response(PN532_COMMAND_INLISTPASSIVETARGET, rsp_buffer, sizeof(rsp_buffer), timeout);
+    if (rc <= 0) {
+        return rc;
+    }
+
+    if (rc < 10) {
+        ESP_LOGE(TAG, "Get target response too small");
+        return -ESP_ERR_INVALID_SIZE;
+    }
+
+    if (rsp_buffer[0] != 0x01) {
+        ESP_LOGE(TAG, "More than one tag detected");
+        return -ESP_ERR_INVALID_SIZE;
+    }
+
+    uint8_t uid_len = rsp_buffer[5];
+
+    if (uid_len > 7) {
+        ESP_LOGE(TAG, "Found card with unexpectedly long UID");
+        return -ESP_ERR_INVALID_SIZE;
+    }
+
+    if (uid_len > data_len) {
+        ESP_LOGE(TAG, "Data buffer not large enough for tag UID");
+        return -ESP_ERR_INVALID_SIZE;
+    }
+    memcpy(data, &rsp_buffer[6], uid_len);
+    return uid_len;
+
 }
