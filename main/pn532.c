@@ -47,6 +47,7 @@ void pn532_wakeup(void)
 
 int pn532_send_command(uint8_t command, uint8_t* data, size_t data_len, TickType_t ack_timeout)
 {
+    ESP_LOGD(TAG, "pn532_send_command %x", (unsigned int)command);
     uint8_t checksum = 0;
 
     frame_buffer[0] = PN532_PREAMBLE;
@@ -72,8 +73,8 @@ int pn532_send_command(uint8_t command, uint8_t* data, size_t data_len, TickType
     frame_buffer[7+data_len+1] = PN532_POSTAMBLE;
 
     uart_write_bytes(uart_num, frame_buffer, (7+data_len+1)+1);
-    uart_wait_tx_done(uart_num, (TickType_t)portMAX_DELAY);
 
+    ESP_LOGD(TAG, "pn532_send_command wait for ack");
     uint8_t ack_frame[6] = {0};
     int rc = uart_read_bytes(uart_num, ack_frame, sizeof(ack_frame), ack_timeout);
     if (rc < 0) {
@@ -84,6 +85,7 @@ int pn532_send_command(uint8_t command, uint8_t* data, size_t data_len, TickType
 
 int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType_t rsp_timeout)
 {
+    ESP_LOGD(TAG, "pn532_get_response %x", (unsigned int)command);
     int rc = 0;
     uint8_t header;
     while (1)
@@ -186,6 +188,7 @@ int pn532_get_response(uint8_t command, uint8_t* data, size_t data_len, TickType
 
 void pn532_flush_until_empty(void)
 {
+    ESP_LOGD(TAG, "Flushing RX buffer");
     size_t data_available;
     do {
         uart_flush(uart_num);

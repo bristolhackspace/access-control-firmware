@@ -5,6 +5,8 @@
 #include "esp_system.h"
 #include "esp_log.h"
 #include "nvs_flash.h"
+#include "esp_ota_ops.h"
+#include "cJSON.h"
 
 #include "lwip/err.h"
 #include "lwip/sys.h"
@@ -17,10 +19,13 @@
 
 static const char* TAG = "main";
 
-#define CARD_SCAN_INTERVAL_MS 10000
+#define CARD_SCAN_INTERVAL_MS 4000
 #define ERROR_TIMEOUT_MS 2000
 
 ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
+
+static volatile bool unlocked;
+static volatile bool in_use;
 
 typedef struct
 {
@@ -38,8 +43,25 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
         ESP_LOGI(TAG, "Card found");
         http_api_unlock(card_id->id, card_id->id_len);
         break;
+    case APPLICATION_EVENT_STATUS:
+        cJSON* status = cJSON_CreateObject();
+        cJSON_AddBoolToObject(status, "unlocked", unlocked);
+
+        if (http_api_status(status) == ESP_OK) {
+            esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
+            const esp_partition_t* running_partition = esp_ota_get_running_partition();
+            esp_ota_get_state_partition(running_partition, &state);
+            if (state == ESP_OTA_IMG_PENDING_VERIFY) {
+                esp_ota_mark_app_valid_cancel_rollback();
+                ESP_LOGI(TAG, "Update successful, cancelling rollback");
+            }
+        }
+        cJSON_Delete(status);
+
+
+        break;
     case APPLICATION_EVENT_SET_UNLOCKED:
-        int unlocked = *(int*)event_data;
+        unlocked = *(bool*)event_data;
         if (unlocked) {
             ESP_LOGI(TAG, "Machine unlocked");
         } else {
@@ -52,14 +74,16 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
     case APPLICATION_EVENT_FIRMWARE_UPDATE:
         char* update_url = (char*)event_data;
         ESP_LOGI(TAG, "Updating from %s", update_url);
-        break;
-    case APPLICATION_EVENT_REBOOT:
-        ESP_LOGI(TAG, "Rebooting application");
+        http_api_ota(update_url);
         break;
     default:
         break;
     }
 }
+
+bool is_unlocked(void);
+bool is_update_pending(void);
+bool is_in_use(void);
 
 
 void app_main(void)
@@ -82,6 +106,8 @@ void app_main(void)
     ESP_ERROR_CHECK(esp_event_handler_register(APPLICATION_EVENT, ESP_EVENT_ANY_ID, handle_app_event, NULL));
 
     uint8_t loop_count = 0;
+
+    card_id_t* card_id = alloca(sizeof(card_id_t) + CARD_ID_MAX_LEN);
 
     while (1)
     {
@@ -107,13 +133,14 @@ void app_main(void)
             continue;
         }
 
-        card_id_t* card_id = alloca(sizeof(card_id_t) + CARD_ID_MAX_LEN);
-
+        memset(card_id, 0, sizeof(card_id_t) + CARD_ID_MAX_LEN);
         ret = pn532_get_passive_target(card_id->id, CARD_ID_MAX_LEN, CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
         if (ret == 0) {
             ESP_LOGI(TAG, "No card found");
+            esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_STATUS, NULL, 0, portMAX_DELAY);
             continue;
         }
+
         if (ret < 0) {
             ESP_LOGE(TAG, "Error reading card");
             vTaskDelay(ERROR_TIMEOUT_MS/portTICK_PERIOD_MS);
