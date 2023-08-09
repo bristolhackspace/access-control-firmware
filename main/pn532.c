@@ -11,9 +11,9 @@ static const char* TAG = "pn532";
 
 #define BUF_SIZE (1024)
 
-static const uart_port_t uart_num = UART_NUM_2;
-static const int tx_pin = 25;
-static const int rx_pin = 26;
+static const uart_port_t uart_num = UART_NUM_0;
+static const int tx_pin = UART_PIN_NO_CHANGE;
+static const int rx_pin = UART_PIN_NO_CHANGE;
 static const TickType_t default_timeout = 500/portTICK_PERIOD_MS;
 
 static uint8_t frame_buffer[300];
