@@ -6,6 +6,7 @@
 #include "esp_log.h"
 #include "nvs_flash.h"
 #include "esp_ota_ops.h"
+#include "driver/gpio.h"
 #include "cJSON.h"
 
 #include "lwip/err.h"
@@ -20,6 +21,10 @@
 static const char* TAG = "main";
 
 #define CARD_SCAN_INTERVAL_MS 2000
+#define RELAY_GPIO_PIN 26
+#define BUTTON_GPIO_PIN 25
+#define PWR_DETECT_GPIO_PIN 4
+#define DEBOUNCE_INTERVAL_MS 250
 
 ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
 
@@ -42,6 +47,10 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
         ESP_LOGI(TAG, "Card found");
         http_api_unlock(card_id->id, card_id->id_len);
         break;
+    case APPLICATION_EVENT_BUTTON_PRESS:
+        ESP_LOGI(TAG, "Button pressed");
+        http_api_lock();
+        break;
     case APPLICATION_EVENT_STATUS:
         cJSON* status = cJSON_CreateObject();
         cJSON_AddBoolToObject(status, "unlocked", unlocked);
@@ -62,8 +71,10 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
     case APPLICATION_EVENT_SET_UNLOCKED:
         unlocked = *(bool*)event_data;
         if (unlocked) {
+            gpio_set_level(RELAY_GPIO_PIN, 1);
             ESP_LOGI(TAG, "Machine unlocked");
         } else {
+            gpio_set_level(RELAY_GPIO_PIN, 0);
             ESP_LOGI(TAG, "Machine locked");
         }
         break;
@@ -80,10 +91,57 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
     }
 }
 
-bool is_unlocked(void);
-bool is_update_pending(void);
-bool is_in_use(void);
 
+static void IRAM_ATTR button_isr_handler(void* arg)
+{
+    static TickType_t last_interrupt_tick = 0;
+
+    TickType_t current_interrupt_tick = xTaskGetTickCount();
+    TickType_t delta = current_interrupt_tick - last_interrupt_tick;
+
+    if (delta*portTICK_PERIOD_MS < DEBOUNCE_INTERVAL_MS)
+    {
+        return;
+    }
+
+    last_interrupt_tick = current_interrupt_tick;
+
+    uint32_t gpio_num = (uint32_t) arg;
+    if (BUTTON_GPIO_PIN == gpio_num)
+    {
+        esp_event_isr_post(APPLICATION_EVENT, APPLICATION_EVENT_BUTTON_PRESS, NULL, 0, NULL);
+    }
+}
+
+void gpio_init()
+{
+    gpio_config_t io_conf = {};
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.mode = GPIO_MODE_OUTPUT;
+    io_conf.pin_bit_mask = (1ULL << RELAY_GPIO_PIN);
+    io_conf.pull_down_en = 0;
+    io_conf.pull_up_en = 0;
+    gpio_config(&io_conf);
+
+
+    uint32_t button_gpio_pin = BUTTON_GPIO_PIN;
+    io_conf.intr_type = GPIO_INTR_NEGEDGE;
+    io_conf.pin_bit_mask = (1ULL << button_gpio_pin);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_up_en = 1;
+    gpio_config(&io_conf);
+
+    gpio_install_isr_service(0);
+    gpio_isr_handler_add(button_gpio_pin, button_isr_handler, (void*) button_gpio_pin);
+
+    uint32_t pwr_detect_gpio_pin = PWR_DETECT_GPIO_PIN;
+    io_conf.intr_type = GPIO_INTR_DISABLE;
+    io_conf.pin_bit_mask = (1ULL << pwr_detect_gpio_pin);
+    io_conf.mode = GPIO_MODE_INPUT;
+    io_conf.pull_down_en = 1;
+    gpio_config(&io_conf);
+
+}
 
 void app_main(void)
 {
@@ -103,6 +161,8 @@ void app_main(void)
     ESP_ERROR_CHECK(http_api_init());
 
     ESP_ERROR_CHECK(esp_event_handler_register(APPLICATION_EVENT, ESP_EVENT_ANY_ID, handle_app_event, NULL));
+
+    gpio_init();
 
     uint8_t loop_count = 0;
 
