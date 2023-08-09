@@ -19,8 +19,7 @@
 
 static const char* TAG = "main";
 
-#define CARD_SCAN_INTERVAL_MS 4000
-#define ERROR_TIMEOUT_MS 2000
+#define CARD_SCAN_INTERVAL_MS 2000
 
 ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
 
@@ -111,6 +110,8 @@ void app_main(void)
 
     while (1)
     {
+        esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_STATUS, NULL, 0, portMAX_DELAY);
+
         // Re-initialise the PN532 every 16 interations just in case it has failed for whatever reason.
         if (loop_count % 16 == 0) {
             ESP_LOGI(TAG, "Reconfiguring pn532");
@@ -118,7 +119,7 @@ void app_main(void)
             ret = pn532_sam_config();
             if (ret) {
                 ESP_LOGE(TAG, "Error re-configuring pn532");
-                vTaskDelay(ERROR_TIMEOUT_MS/portTICK_PERIOD_MS);
+                vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
                 continue;
             }
         }
@@ -129,7 +130,7 @@ void app_main(void)
         ret = pn532_listen_for_passive_target();
         if (ret < 0) {
             ESP_LOGE(TAG, "Error iistening for targets");
-            vTaskDelay(ERROR_TIMEOUT_MS/portTICK_PERIOD_MS);
+            vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
             continue;
         }
 
@@ -137,24 +138,19 @@ void app_main(void)
         ret = pn532_get_passive_target(card_id->id, CARD_ID_MAX_LEN, CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
         if (ret == 0) {
             ESP_LOGI(TAG, "No card found");
-            esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_STATUS, NULL, 0, portMAX_DELAY);
             continue;
         }
 
         if (ret < 0) {
             ESP_LOGE(TAG, "Error reading card");
-            vTaskDelay(ERROR_TIMEOUT_MS/portTICK_PERIOD_MS);
+            vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
             continue;
         }
 
         card_id->id_len = ret;
-        // Obfuscate just for testing
-        card_id->id[0] = 0x55;
-        card_id->id[1] = 0xaa;
-        card_id->id[2] = 0x55;
 
         esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_CARD_SCANNED, card_id, sizeof(card_id_t)+card_id->id_len, portMAX_DELAY);
 
-        vTaskDelay(2000/portTICK_PERIOD_MS);
+        vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
     }
 }
