@@ -29,6 +29,7 @@ static const char* TAG = "main";
 
 ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
 
+static volatile bool has_settings;
 static volatile bool unlocked;
 static volatile bool in_use;
 
@@ -55,6 +56,8 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
     case APPLICATION_EVENT_STATUS:
         cJSON* status = cJSON_CreateObject();
         cJSON_AddBoolToObject(status, "unlocked", unlocked);
+
+        cJSON_AddBoolToObject(status, "has_settings", has_settings);
 
         if (http_api_status(status) == ESP_OK) {
             esp_ota_img_states_t state = ESP_OTA_IMG_UNDEFINED;
