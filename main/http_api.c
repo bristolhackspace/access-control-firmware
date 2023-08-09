@@ -114,7 +114,7 @@ esp_err_t http_api_unlock(uint8_t* card_id, int len)
 
     char card_id_str[(CARD_ID_MAX_LEN*2)+1] = {0};
     char* card_id_str_end = card_id_str;
-    for (int i=0; i<len; i++)
+    for (int i=len-1; i>=0; i--)
     {
         sprintf(card_id_str_end, "%02hhx", card_id[i]);
         card_id_str_end += 2;
