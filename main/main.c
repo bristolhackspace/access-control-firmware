@@ -21,19 +21,11 @@
 
 static const char* TAG = "main";
 
-#define CARD_SCAN_INTERVAL_MS 2000
-
 ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
 
 static volatile bool has_settings;
 static volatile bool unlocked;
 static volatile bool in_use;
-
-typedef struct
-{
-    int id_len;
-    uint8_t id[];
-} card_id_t;
 
 
 void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -43,7 +35,7 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
     case APPLICATION_EVENT_CARD_SCANNED:
         card_id_t* card_id = (card_id_t*)event_data;
         ESP_LOGI(TAG, "Card found");
-        http_api_unlock(card_id->id, card_id->id_len);
+        http_api_unlock(card_id->id, sizeof(card_id_t));
         break;
     case APPLICATION_EVENT_BUTTON_PRESS:
         ESP_LOGI(TAG, "Button pressed");
@@ -142,53 +134,9 @@ void app_main(void)
 
     gpio_control_init();
 
-    uint8_t loop_count = 0;
-
-    card_id_t* card_id = alloca(sizeof(card_id_t) + CARD_ID_MAX_LEN);
-
     while (1)
     {
         esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_STATUS, NULL, 0, portMAX_DELAY);
-
-        // Re-initialise the PN532 every 16 interations just in case it has failed for whatever reason.
-        if (loop_count % 16 == 0) {
-            ESP_LOGI(TAG, "Reconfiguring pn532");
-            pn532_wakeup();
-            ret = pn532_sam_config();
-            if (ret) {
-                ESP_LOGE(TAG, "Error re-configuring pn532");
-                vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
-                continue;
-            }
-        }
-        loop_count += 1;
-
-
-        ESP_LOGI(TAG, "Scanning for card");
-        ret = pn532_listen_for_passive_target();
-        if (ret < 0) {
-            ESP_LOGE(TAG, "Error iistening for targets");
-            vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
-            continue;
-        }
-
-        memset(card_id, 0, sizeof(card_id_t) + CARD_ID_MAX_LEN);
-        ret = pn532_get_passive_target(card_id->id, CARD_ID_MAX_LEN, CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
-        if (ret == 0) {
-            ESP_LOGI(TAG, "No card found");
-            continue;
-        }
-
-        if (ret < 0) {
-            ESP_LOGE(TAG, "Error reading card");
-            vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
-            continue;
-        }
-
-        card_id->id_len = ret;
-
-        esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_CARD_SCANNED, card_id, sizeof(card_id_t)+card_id->id_len, portMAX_DELAY);
-
-        vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+        pn532_full_scan_sequence();
     }
 }

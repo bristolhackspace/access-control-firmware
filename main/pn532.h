@@ -119,9 +119,16 @@
 #define PN532_GPIO_P34 (4)              ///< GPIO 34
 #define PN532_GPIO_P35 (5)              ///< GPIO 35
 
+typedef struct
+{
+    uint8_t id[4];
+} card_id_t;
+
 esp_err_t pn532_init(void);
 void pn532_wakeup(void);
 esp_err_t pn532_firmware_version(uint8_t* ic, uint8_t* ver, uint8_t* rev, uint8_t* support);
 esp_err_t pn532_sam_config(void);
 esp_err_t pn532_listen_for_passive_target(void);
 int pn532_get_passive_target(uint8_t* data, size_t data_len, TickType_t timeout);
+
+void pn532_full_scan_sequence(void);

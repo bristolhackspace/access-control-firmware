@@ -6,10 +6,12 @@
 #include <string.h>
 
 #include "pn532.h"
+#include "main.h"
 
 static const char* TAG = "pn532";
 
 #define BUF_SIZE (1024)
+#define CARD_SCAN_INTERVAL_MS 2000
 
 static const uart_port_t uart_num = UART_NUM_0;
 static const int tx_pin = UART_PIN_NO_CHANGE;
@@ -271,4 +273,56 @@ int pn532_get_passive_target(uint8_t* data, size_t data_len, TickType_t timeout)
     memcpy(data, &rsp_buffer[6], uid_len);
     return uid_len;
 
+}
+
+void pn532_full_scan_sequence(void)
+{
+    static uint8_t loop_count = 0;
+    int ret = 0;
+
+    // Re-initialise the PN532 every 16 interations just in case it has failed for whatever reason.
+    if (loop_count % 16 == 0) {
+        ESP_LOGI(TAG, "Reconfiguring pn532");
+        pn532_wakeup();
+        ret = pn532_sam_config();
+        if (ret) {
+            ESP_LOGE(TAG, "Error re-configuring pn532");
+            vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+            return;
+        }
+    }
+    loop_count += 1;
+
+
+    ESP_LOGI(TAG, "Scanning for card");
+    ret = pn532_listen_for_passive_target();
+    if (ret < 0) {
+        ESP_LOGE(TAG, "Error iistening for targets");
+        vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+        return;
+    }
+
+    card_id_t card_id = {0};
+
+    ret = pn532_get_passive_target(card_id.id, sizeof(card_id), CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+    if (ret == 0) {
+        ESP_LOGI(TAG, "No card found");
+        return;
+    }
+
+    if (ret < 0) {
+        ESP_LOGE(TAG, "Error reading card");
+        vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+        return;
+    }
+
+    if (ret != 4) {
+        ESP_LOGE(TAG, "Card UID not 4 bytes");
+        vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
+        return;
+    }
+
+    esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_CARD_SCANNED, &card_id, sizeof(card_id), portMAX_DELAY);
+
+    vTaskDelay(CARD_SCAN_INTERVAL_MS/portTICK_PERIOD_MS);
 }
