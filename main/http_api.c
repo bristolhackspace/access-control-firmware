@@ -45,33 +45,8 @@ esp_err_t _http_generic_event_handler(esp_http_client_event_t *evt)
                     cJSON_Delete(root);
                     break;
                 }
-                cJSON *current_element = NULL;
-
-                cJSON_ArrayForEach(current_element, root) {
-                    if (current_element->string == NULL) {
-                        continue;
-                    }
-                    if (strcmp(current_element->string, "unlocked") == 0) {
-                        bool unlocked = false;
-                        if (cJSON_IsTrue(current_element)) {
-                            unlocked = true;
-                        } else if (cJSON_IsFalse(current_element)) {
-                            unlocked = false;
-                        } else {
-                            continue;
-                        }
-                        esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_SET_UNLOCKED, &unlocked, sizeof(unlocked), portMAX_DELAY);
-                    } else if (strcmp(current_element->string, "firmware_update") == 0) {
-                        char* update_url = cJSON_GetStringValue(current_element);
-                        if (update_url == NULL) {
-                            ESP_LOGE(TAG, "firmware_update must be a string");
-                            continue;
-                        }
-                        esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_FIRMWARE_UPDATE, update_url, strlen(update_url)+1, portMAX_DELAY);
-                    }
-                }
-
-                cJSON_Delete(root);
+                // post a pointer to the cJSON pointer as cJSON handles the allocation
+                esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_RESPONSE_JSON, &root, sizeof(cJSON*), portMAX_DELAY);
             }
 
             int status_code = esp_http_client_get_status_code(evt->client);

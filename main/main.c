@@ -1,6 +1,7 @@
 
 #include <string.h>
 #include <alloca.h>
+#include <math.h>
 #include "freertos/FreeRTOS.h"
 #include "esp_system.h"
 #include "esp_log.h"
@@ -26,6 +27,58 @@ ESP_EVENT_DEFINE_BASE(APPLICATION_EVENT);
 static volatile bool has_settings;
 static volatile bool unlocked;
 static volatile bool in_use;
+
+static volatile int idle_timeout = -1;
+static volatile int idle_power_limit = 50;
+
+static void handle_json_response(cJSON *root)
+{
+    cJSON *current_element = NULL;
+
+    cJSON_ArrayForEach(current_element, root) {
+        if (current_element->string == NULL) {
+            continue;
+        }
+        if (strcmp(current_element->string, "unlocked") == 0) {
+            if (cJSON_IsBool(current_element)) {
+                unlocked = cJSON_IsTrue(current_element);
+                gpio_set_relay(unlocked);
+            }
+        } else if (strcmp(current_element->string, "firmware_update") == 0) {
+            char* update_url = cJSON_GetStringValue(current_element);
+            if (update_url == NULL) {
+                ESP_LOGE(TAG, "firmware_update must be a string");
+                continue;
+            }
+            esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_FIRMWARE_UPDATE, update_url, strlen(update_url)+1, portMAX_DELAY);
+        } else if (strcmp(current_element->string, "idle_timeout") == 0) {
+            double timeout_dbl = cJSON_GetNumberValue(current_element);
+            if (isnan(timeout_dbl)) {
+                ESP_LOGE(TAG, "idle_timeout must be a number");
+                continue;
+            }
+            idle_timeout = (int)timeout_dbl;
+            has_settings = true;
+        } else if (strcmp(current_element->string, "idle_power_limit") == 0) {
+            double idle_power_dbl = cJSON_GetNumberValue(current_element);
+            if (isnan(idle_power_dbl)) {
+                ESP_LOGE(TAG, "idle_power_limit must be a number");
+                continue;
+            }
+            idle_power_limit = (int)idle_power_dbl;
+            has_settings = true;
+        } else if (strcmp(current_element->string, "invert_logout_button") == 0) {
+            if (!cJSON_IsBool(current_element)) {
+                ESP_LOGE(TAG, "invert_logout_button must be a boolean");
+                continue;
+            }
+            goip_control_set_logout_button_polarity(cJSON_IsTrue(current_element));
+            has_settings = true;
+        }
+    }
+
+    cJSON_Delete(root);
+}
 
 
 void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t event_id, void* event_data)
@@ -58,16 +111,10 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
         }
         cJSON_Delete(status);
 
-
         break;
-    case APPLICATION_EVENT_SET_UNLOCKED:
-        unlocked = *(bool*)event_data;
-        gpio_set_relay(unlocked);
-        if (unlocked) {
-            ESP_LOGI(TAG, "Machine unlocked");
-        } else {
-            ESP_LOGI(TAG, "Machine locked");
-        }
+    case APPLICATION_EVENT_RESPONSE_JSON:
+        cJSON* root = *(cJSON**)event_data;
+        handle_json_response(root);
         break;
     case APPLICATION_EVENT_BLINK_ERROR:
         ESP_LOGI(TAG, "Blinking the LED in anger");
