@@ -25,7 +25,7 @@ static void event_handler(void* arg, esp_event_base_t event_base,
         esp_wifi_connect();
     } else if (event_base == WIFI_EVENT && event_id == WIFI_EVENT_STA_DISCONNECTED) {
         ESP_LOGI(TAG, "AP disconnected");
-        xTimerChangePeriod(reconnect_timer, (reconnect_timeout*1000)/portTICK_PERIOD_MS, 100);
+        xTimerChangePeriod(reconnect_timer, (reconnect_timeout)/portTICK_PERIOD_MS, 100);
         xTimerStart(reconnect_timer, 100);
 
         reconnect_timeout *= 2;
