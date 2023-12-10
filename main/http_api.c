@@ -51,7 +51,7 @@ esp_err_t _http_generic_event_handler(esp_http_client_event_t *evt)
 
             int status_code = esp_http_client_get_status_code(evt->client);
             if (status_code >= HttpStatus_MultipleChoices) {
-                esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_BLINK_ERROR, NULL, 0, portMAX_DELAY);
+                esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_HTTP_ERROR, NULL, 0, portMAX_DELAY);
             }
 
             break;

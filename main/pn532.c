@@ -6,7 +6,7 @@
 #include <string.h>
 
 #include "pn532.h"
-#include "main.h"
+#include "event_loop.h"
 
 static const char* TAG = "pn532";
 
