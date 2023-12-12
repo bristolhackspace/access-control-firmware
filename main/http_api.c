@@ -8,7 +8,7 @@
 #include <string.h>
 #include <stdbool.h>
 
-#include "main.h"
+#include "app_events.h"
 #include "http_api.h"
 
 static const char* TAG = "http_api";
@@ -16,6 +16,8 @@ static const char* TAG = "http_api";
 #define MAX_HTTP_OUTPUT_BUFFER 1024
 #define BASE_URL CONFIG_BASE_URL
 #define MACHINE_MAC_LEN 6
+
+#define CARD_ID_MAX_LEN 4
 
 static char mac_str[(MACHINE_MAC_LEN*2)+1] = {0};
 static char url[200];
@@ -46,12 +48,12 @@ esp_err_t _http_generic_event_handler(esp_http_client_event_t *evt)
                     break;
                 }
                 // post a pointer to the cJSON pointer as cJSON handles the allocation
-                esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_RESPONSE_JSON, &root, sizeof(cJSON*), portMAX_DELAY);
+                app_event_post(APPLICATION_EVENT_RESPONSE_JSON, &root, sizeof(cJSON*), portMAX_DELAY);
             }
 
             int status_code = esp_http_client_get_status_code(evt->client);
             if (status_code >= HttpStatus_MultipleChoices) {
-                esp_event_post(APPLICATION_EVENT, APPLICATION_EVENT_BLINK_ERROR, NULL, 0, portMAX_DELAY);
+                app_event_post(APPLICATION_EVENT_HTTP_ERROR, NULL, 0, portMAX_DELAY);
             }
 
             break;
@@ -129,6 +131,7 @@ esp_err_t http_api_lock(void)
     return err;
 }
 
+
 esp_err_t http_api_status(cJSON *status)
 {
     esp_err_t err;
@@ -156,6 +159,25 @@ esp_err_t http_api_status(cJSON *status)
 
     esp_http_client_cleanup(client);
     cJSON_free(json);
+    return err;
+}
+
+esp_err_t http_api_settings(void)
+{
+    esp_err_t err;
+
+    snprintf(url, sizeof(url), BASE_URL "/api/machines/%s/settings", mac_str);
+
+    esp_http_client_config_t http_cfg = {.url = url, .event_handler = _http_generic_event_handler};
+    esp_http_client_handle_t client = esp_http_client_init(&http_cfg);
+
+    err = esp_http_client_perform(client);
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "HTTP GET request failed: %s", esp_err_to_name(err));
+    }
+
+    esp_http_client_cleanup(client);
     return err;
 }
 
