@@ -8,6 +8,7 @@
 
 #include "gpio_control.h"
 #include "http_api.h"
+#include "pn532.h"
 
 static const char* TAG = "app_events";
 
@@ -123,7 +124,7 @@ static void handle_json_response(cJSON *root)
             // idle_timeout = (int)timeout_dbl;
             if (current_state == APPLICATION_STATE_INITIALISING)
             {
-                current_state = APPLICATION_STATE_UNLOCKED;
+                current_state = APPLICATION_STATE_LOCKED;
             }
         } else if (strcmp(current_element->string, "idle_power_limit") == 0) {
             double idle_power_dbl = cJSON_GetNumberValue(current_element);
@@ -136,7 +137,20 @@ static void handle_json_response(cJSON *root)
             {
                 current_state = APPLICATION_STATE_UNLOCKED;
             }
-        }
+        } else if (strcmp(current_element->string, "firmware_update") == 0) {
+            char* update_url = cJSON_GetStringValue(current_element);
+            if (update_url == NULL) {
+                ESP_LOGE(TAG, "firmware_update must be a string");
+                continue;
+            }
+            if (current_state != APPLICATION_STATE_FW_UPDATE)
+            {
+                current_state = APPLICATION_STATE_FW_UPDATE;
+                gpio_set_led_mode(LED_MODE_ERROR);
+                ESP_LOGI(TAG, "Updating from %s", update_url);
+                http_api_ota(update_url);
+            }
+        } 
     }
 }
 
@@ -151,8 +165,12 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
         {
             case APPLICATION_STATE_LOCKED:
             case APPLICATION_STATE_UNLOCKED:
+                card_id_t* card_id = (card_id_t*)event_data;
+                ESP_LOGI(TAG, "Card found");
+                http_api_unlock(card_id->id, sizeof(card_id_t));
                 break;
             case APPLICATION_STATE_BUTTON_HOLD:
+                current_state = APPLICATION_STATE_INDUCTION;
                 break;
             case APPLICATION_STATE_INDUCTION:
                 break;
@@ -194,6 +212,7 @@ void handle_app_event(void* handler_arg, esp_event_base_t event_base, int32_t ev
         cJSON_Delete(root);
         break;
     case APPLICATION_EVENT_HTTP_ERROR:
+        gpio_led_error_flash();
         break;
     case APPLICATION_EVENT_FIRMWARE_UPDATE:
         break;
@@ -215,14 +234,16 @@ void on_state_change(void)
         break;
     case APPLICATION_STATE_LOCKED:
         gpio_set_relay(false);
+        gpio_set_led_mode(LED_MODE_IDLE);
         break;
     case APPLICATION_STATE_UNLOCKED:
         gpio_set_relay(true);
+        gpio_set_led_mode(LED_MODE_OFF);
         break;
     case APPLICATION_STATE_BUTTON_HOLD:
-        gpio_set_relay(true);
         break;
     case APPLICATION_STATE_INDUCTION:
+        gpio_set_led_mode(LED_MODE_INDUCT);
         break;
     case APPLICATION_STATE_FW_UPDATE:
         break;

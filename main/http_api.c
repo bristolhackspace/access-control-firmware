@@ -40,6 +40,11 @@ esp_err_t _http_generic_event_handler(esp_http_client_event_t *evt)
             output_len += copy_len;
             break;
         case HTTP_EVENT_ON_FINISH:
+            int status_code = esp_http_client_get_status_code(evt->client);
+            if (status_code >= HttpStatus_MultipleChoices) {
+                app_event_post(APPLICATION_EVENT_HTTP_ERROR, NULL, 0, portMAX_DELAY);
+            }
+            
             if (output_len) {
                 cJSON *root = cJSON_ParseWithLength(output_buffer, output_len);
                 if (!cJSON_IsObject(root)) {
@@ -49,11 +54,6 @@ esp_err_t _http_generic_event_handler(esp_http_client_event_t *evt)
                 }
                 // post a pointer to the cJSON pointer as cJSON handles the allocation
                 app_event_post(APPLICATION_EVENT_RESPONSE_JSON, &root, sizeof(cJSON*), portMAX_DELAY);
-            }
-
-            int status_code = esp_http_client_get_status_code(evt->client);
-            if (status_code >= HttpStatus_MultipleChoices) {
-                app_event_post(APPLICATION_EVENT_HTTP_ERROR, NULL, 0, portMAX_DELAY);
             }
 
             break;

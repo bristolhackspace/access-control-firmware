@@ -48,5 +48,17 @@ menu "Access controller configuration"
         help
             Application status update interval in milliseconds
 
+    config NFC_TASK_STACK_SIZE
+        int "NFC task stack size"
+        default 2048
+        help
+            Stack size of the NFC task
+
+    config LED_TASK_STACK_SIZE
+        int "LED task stack size"
+        default 1024
+        help
+            Stack size of the LED task
+
 
 endmenu

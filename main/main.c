@@ -14,7 +14,7 @@
 #include "lwip/sys.h"
 
 #include "wifi_manage.h"
-// #include "pn532.h"
+#include "pn532.h"
 #include "http_api.h"
 #include "gpio_control.h"
 #include "app_events.h"
@@ -55,7 +55,7 @@ esp_err_t logging_init(void)
 
 void app_main(void)
 {
-    // logging_init();
+    logging_init();
 
     //Initialize NVS
     esp_err_t ret = nvs_flash_init();
@@ -69,7 +69,7 @@ void app_main(void)
 
     wifi_init_sta();
 
-    // ESP_ERROR_CHECK(pn532_init());
+    ESP_ERROR_CHECK(pn532_init());
     ESP_ERROR_CHECK(http_api_init());
 
     gpio_control_init();
